@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  password          String
+  xp                Int                @default(0)
+  level             Int                @default(1)
+  streak            Int                @default(0)
+  brainScore        Int                @default(0)
+  lastChallengeDate DateTime?
+  lastRewardDate    DateTime?
+  createdAt         DateTime           @default(now())
+  histories         ChallengeHistory[]
+  stats             Stats[]
+  rewards           Reward[]
+}
+
+model ChallengeHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  tanggal    DateTime @default(now())
+  skor       Int
+  akurasi    Float
+  rataWaktu  Float
+  difficulty String
+  xpEarned   Int
+}
+
+model Stats {
+  id         String @id @default(cuid())
+  userId     String
+  user       User   @relation(fields: [userId], references: [id])
+  tipeSoal   String
+  totalBenar Int    @default(0)
+  totalSalah Int    @default(0)
+  rataWaktu  Float  @default(0)
+}
+
+model Reward {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  tipeReward     String
+  deskripsi      String
+  tanggalDidapat DateTime @default(now())
+}

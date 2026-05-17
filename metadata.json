@@ -1,0 +1,6 @@
+{
+  "name": "DailyMind Challenge",
+  "description": "Tantangan harian adaptif untuk melatih logika dan pola pikir",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
