@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [ main ] # Jalankan setiap kali kamu push ke branch main
+    branches: [ main ]
 
 jobs:
   build:
@@ -15,12 +15,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Build Next.js
-        run: npm run build
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -30,13 +24,27 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v2
 
+      - name: Install Dependencies
+        run: |
+          npm install --legacy-peer-deps
+          # Memastikan assets generator terinstall untuk dijalankan npx
+          npm install @capacitor/assets @capacitor/cli --save-dev
+
+      - name: Build Next.js
+        run: npm run build
+
       - name: Install Capacitor & Build APK
         run: |
+          # Buat folder android jika belum ada
           if [ ! -d "android" ]; then
             npx cap add android
           fi
-          npx @capacitor/assets generate
-          npx cap sync
+          
+          # Jalankan generator assets dan sync
+          npx @capacitor/assets generate --android
+          npx cap sync android
+          
+          # Masuk ke folder android dan build APK
           cd android && ./gradlew assembleDebug
 
       - name: Upload APK
