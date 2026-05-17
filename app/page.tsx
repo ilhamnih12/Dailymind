@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flame, Brain } from "lucide-react";
 import { motion } from "motion/react";
+import { supabase } from "@/lib/supabase";
 
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
@@ -11,18 +12,36 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/user")
-      .then((res) => {
-        if (!res.ok) throw new Error("Unauthorized");
-        return res.json();
-      })
-      .then((data) => {
-        setUser(data);
-        setLoading(false);
-      })
-      .catch(() => {
+    const fetchUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         router.push("/login");
-      });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') {
+        // Just empty user or error
+      }
+      
+      if (!data) {
+        // create profile if not exists
+        const { data: newData } = await supabase.from('profiles').insert([
+          { id: session.user.id, email: session.user.email, xp: 0, level: 1, streak: 0, brainscore: 0 }
+        ]).select().single();
+        setUser(newData);
+      } else {
+        setUser(data);
+      }
+      
+      setLoading(false);
+    };
+    
+    fetchUser();
   }, [router]);
 
   if (loading) {
@@ -39,22 +58,24 @@ export default function Dashboard() {
   const handleClaimReward = async () => {
     setClaiming(true);
     try {
-      const res = await fetch("/api/reward/claim", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setUser((prev: any) => ({
-          ...prev,
-          xp: prev.xp + data.xpEarned,
-          level: data.newLevel,
-          lastRewardDate: new Date().toISOString(),
-        }));
-      }
+      // Simulate claim via Supabase update
+      const { data } = await supabase
+        .from('profiles')
+        .update({ 
+          xp: user.xp + 50, 
+          lastrewarddate: new Date().toISOString() 
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
+        
+      if (data) setUser(data);
     } catch {}
     setClaiming(false);
   };
 
   const hasClaimedDaily = Boolean(
-    user?.lastRewardDate && new Date(user.lastRewardDate).toDateString() === new Date().toDateString()
+    user?.lastrewarddate && new Date(user.lastrewarddate).toDateString() === new Date().toDateString()
   );
 
   return (
@@ -63,7 +84,7 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold m-0 tracking-tight">DailyMind</h1>
         <div className="bg-[#1e293b] rounded-xl px-2.5 py-1 flex items-center gap-2">
           <div className="w-5 h-5 bg-[#3b82f6] rounded-full flex items-center justify-center text-[10px] font-bold text-white">
-            {user?.level}
+            {user?.level || 1}
           </div>
           <span className="text-xs font-semibold">Level Pemula</span>
         </div>
@@ -108,7 +129,7 @@ export default function Dashboard() {
             <span className="stat-label">Streak</span>
             <div className="flex items-center">
                 <Flame className="w-5 h-5 text-orange-500 mr-1" />
-                <span className="stat-value leading-none">{user?.streak} Hr</span>
+                <span className="stat-value leading-none">{user?.streak || 0} Hr</span>
             </div>
             <div className="bg-amber-500/10 border border-dashed border-amber-500 text-amber-500 p-2 rounded-xl text-[0.7rem] text-center font-medium mt-1">
                +{daysToMystery} hari ke Mystery Box
@@ -123,9 +144,9 @@ export default function Dashboard() {
           >
             <span className="stat-label">Brain Score</span>
             <div className="flex items-center justify-between">
-              <span className="stat-value leading-none">{user?.brainScore}</span>
+              <span className="stat-value leading-none">{user?.brainscore || 0}</span>
               <div className="w-12 h-12 border-4 border-[#3b82f6] rounded-full flex items-center justify-center font-bold text-[0.9rem]">
-                 {user?.brainScore}
+                 {user?.brainscore || 0}
               </div>
             </div>
           </motion.div>
@@ -141,7 +162,7 @@ export default function Dashboard() {
             <div>
                <span className="stat-label">Progres XP</span>
                <div className="text-[1rem] font-bold mt-1 text-[#f8fafc]">
-                 {user?.xp} / {(user?.level * 100)} XP
+                 {user?.xp || 0} / {((user?.level || 1) * 100)} XP
                </div>
             </div>
             <span className="text-[12px] text-[#64748b] font-medium">{xpProgress}%</span>

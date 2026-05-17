@@ -2,22 +2,26 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, User as UserIcon } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function Profil() {
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/user")
-      .then(res => res.json())
-      .then(data => {
-         if (data.error) router.push("/login");
-         else setUser(data);
-      });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+       if (!session) {
+           router.push("/login");
+           return;
+       }
+       supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data }) => {
+           if (data) setUser({ ...data, email: session.user.email });
+       });
+    });
   }, [router]);
 
   const handleLogout = async () => {
-     await fetch("/api/auth/logout", { method: "POST" });
+     await supabase.auth.signOut();
      router.push("/login");
   };
 
@@ -33,7 +37,7 @@ export default function Profil() {
             </div>
             <h2 className="text-[1.1rem] font-bold text-white m-0">{user.email}</h2>
             <div className="mt-2 text-[#94a3b8] text-[0.8rem] font-medium">
-                Bergabung {new Date(user.createdAt).toLocaleDateString('id-ID')}
+                Bergabung {new Date(user.created_at || Date.now()).toLocaleDateString('id-ID')}
             </div>
         </div>
 
@@ -42,14 +46,14 @@ export default function Profil() {
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <span className="text-[#f8fafc] font-medium text-[0.9rem]">Level Saat Ini</span>
-                    <span className="bg-[#1e293b] border border-[rgba(255,255,255,0.05)] px-3 py-1 rounded-xl text-[#3b82f6] font-bold text-[0.9rem] shadow-sm">{user.level}</span>
+                    <span className="bg-[#1e293b] border border-[rgba(255,255,255,0.05)] px-3 py-1 rounded-xl text-[#3b82f6] font-bold text-[0.9rem] shadow-sm">{user.level || 1}</span>
                 </div>
                 <div className="h-px bg-[#1e293b]"></div>
                 <div className="flex items-center justify-between">
                     <span className="text-[#f8fafc] font-medium text-[0.9rem]">
                        Skor Otak Maks
                     </span>
-                    <span className="bg-[#1e293b] border border-[rgba(255,255,255,0.05)] px-3 py-1 rounded-xl text-amber-500 font-bold text-[0.9rem] shadow-sm">{Math.max(user.brainScore, 0)}</span>
+                    <span className="bg-[#1e293b] border border-[rgba(255,255,255,0.05)] px-3 py-1 rounded-xl text-amber-500 font-bold text-[0.9rem] shadow-sm">{Math.max(user.brainscore || 0, 0)}</span>
                 </div>
             </div>
         </div>

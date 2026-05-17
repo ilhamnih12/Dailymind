@@ -1,17 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
+  apiKey: process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" ? process.env.GEMINI_API_KEY : "AIzaSyCWQ4FKmWhHqmCeEsbIFX1f5EiWtPX_Glo",
 });
 
 export async function POST(req: Request) {
   try {
-    const session = await getSession();
-    if (!session?.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { difficulty, type, count, offset } = await req.json();
 
     const currentDifficulty = difficulty || "sedang";

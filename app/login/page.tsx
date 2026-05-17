@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BrainCircuit } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -16,19 +17,17 @@ export default function Login() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
 
-    if (res.ok) {
+    if (!signInError) {
         setTimeout(() => {
           router.push("/");
         }, 500);
     } else {
-      const data = await res.json();
-      setError(data.error || "Gagal login");
+      setError(signInError.message || "Gagal login");
     }
     setLoading(false);
   };

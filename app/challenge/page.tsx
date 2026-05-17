@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Clock, Trophy, Target, Zap, Brain, Eye, Calculator, Grid, TrendingUp, Infinity, Heart } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import confetti from "canvas-confetti";
 
 const CHALLENGE_TYPES = [
@@ -215,15 +216,35 @@ function GameSession({ gameConfig, onBack }: { gameConfig: any, onBack: () => vo
     }
 
     try {
-        const res = await fetch("/api/challenge/submit", {
-            method: "POST",
-            headers: { "Content-Type" : "application/json" },
-            body: JSON.stringify({ akurasi, rataWaktu, skor })
-        });
-        const data = await res.json();
-        setResultData({ ...data, skor, akurasi, totalBenar, totalSoal: finalAnswers.length });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+           const { data: profile } = await supabase.from('profiles').select('xp, level, brainscore').eq('id', session.user.id).single();
+           
+           if (profile) {
+              const newXp = profile.xp + (totalBenar * 10);
+              const newBrainScore = profile.brainscore + Math.floor(akurasi * 5);
+              const newLevel = Math.floor(newXp / 100) + 1;
+              
+              await supabase.from('profiles').update({
+                  xp: newXp,
+                  level: newLevel,
+                  brainscore: newBrainScore,
+                  lastchallengedate: new Date().toISOString()
+              }).eq('id', session.user.id);
+              
+              await supabase.from('challenge_history').insert([{
+                 user_id: session.user.id,
+                 tipe: gameConfig.id,
+                 skor: skor,
+                 akurasi: akurasi,
+                 waktu: rataWaktu
+              }]);
+           }
+        }
         
-        if (totalBenar >= 3) {
+        setResultData({ skor, akurasi, totalBenar, totalSoal: finalAnswers.length, xpEarned: totalBenar * 10 });
+        
+        if (totalBenar >= 3 || (gameConfig.limit === 'infinity' && totalBenar > 0)) {
            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
         }
     } catch(e) {

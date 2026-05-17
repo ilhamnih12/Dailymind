@@ -3,24 +3,46 @@ import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Activity, Clock, Target, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
+import { supabase } from "@/lib/supabase";
 
 export default function Statistik() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then(res => res.json())
-      .then(data => {
-         if (data.histories) {
-            data.chartData = data.histories.map((h: any, i: number) => ({
-                name: `T${data.histories.length - i}`,
+    async function fetchStats() {
+       const { data: { session } } = await supabase.auth.getSession();
+       if (!session) return;
+       
+       const { data: histories } = await supabase
+           .from('challenge_history')
+           .select('*')
+           .eq('user_id', session.user.id)
+           .order('tanggal', { ascending: false })
+           .limit(10);
+           
+       if (histories && histories.length > 0) {
+           const avgAkurasi = histories.reduce((acc, curr) => acc + curr.akurasi, 0) / histories.length;
+           const avgWaktu = histories.reduce((acc, curr) => acc + curr.waktu, 0) / histories.length;
+           
+           const chartData = histories.map((h: any, i: number) => ({
+                name: `T${histories.length - i}`,
                 Skor: h.skor
-            })).reverse();
-         }
-         setStats(data);
-         setLoading(false);
-      });
+           })).reverse();
+           
+           setStats({
+               akurasi: Math.round(avgAkurasi * 100),
+               rataWaktu: avgWaktu.toFixed(1),
+               totalDimainkan: histories.length,
+               insight: "Bermain lebih rajin meningkatkan performa",
+               chartData
+           });
+       } else {
+           setStats({ akurasi: 0, rataWaktu: 0, totalDimainkan: 0, insight: "Ayo mulai tantangan pertamamu!", chartData: [] });
+       }
+       setLoading(false);
+    }
+    fetchStats();
   }, []);
 
   if (loading) return (

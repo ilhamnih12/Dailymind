@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BrainCircuit } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -16,19 +17,17 @@ export default function Register() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+    const { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
     });
 
-    if (res.ok) {
+    if (!signUpError) {
         setTimeout(() => {
           router.push("/");
         }, 500);
     } else {
-      const data = await res.json();
-      setError(data.error || "Gagal mendaftar");
+      setError(signUpError.message || "Gagal mendaftar");
     }
     setLoading(false);
   };
