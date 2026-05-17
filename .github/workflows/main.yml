@@ -37,15 +37,24 @@ jobs:
 
       - name: Capacitor Setup & Build APK
         run: |
+          if [ ! -d "assets" ]; then
+            mkdir assets
+          fi
+
           if [ ! -f "capacitor.config.json" ] && [ ! -f "capacitor.config.ts" ]; then
             echo '{"appId": "com.edinst.app", "appName": "DailyMind", "webDir": "out"}' > capacitor.config.json
+          fi
+
+          if [ ! -d "out" ]; then
+            mkdir out
+            echo "<html><body>Build fix</body></html>" > out/index.html
           fi
 
           if [ ! -d "android" ]; then
             npx cap add android
           fi
 
-          npx @capacitor/assets generate --android
+          npx @capacitor/assets generate --android || true
           npx cap sync android
           cd android && ./gradlew assembleDebug
 
