@@ -4,7 +4,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  output: 'standalone',
+  output: 'export', // <-- SUDAH DIGANTI KE EXPORT
+  images: {
+    unoptimized: true, // <-- WAJIB TAMBAH INI UNTUK MODE EXPORT
+  },
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
@@ -15,3 +18,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
