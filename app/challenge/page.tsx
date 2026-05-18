@@ -1,10 +1,17 @@
 "use client";
+import { GoogleGenAI, Type } from "@google/genai";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Clock, Trophy, Target, Zap, Brain, Eye, Calculator, Grid, TrendingUp, Infinity, Heart } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import confetti from "canvas-confetti";
+
+// Initialize Gemini on the client. Note: Exposing API keys on the client is insecure 
+// and only done here at the user's explicit request for Capacitor compatibility.
+const ai = new GoogleGenAI({
+  apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyCWQ4FKmWhHqmCeEsbIFX1f5EiWtPX_Glo",
+});
 
 const CHALLENGE_TYPES = [
   { id: "logika", title: "Logika Flash", desc: "5 Soal Cepat", icon: <Brain />, mode: "waktu", limit: 5, color: "text-[#3b82f6]", bg: "bg-[#3b82f6]/10" },
@@ -93,13 +100,94 @@ function GameSession({ gameConfig, onBack }: { gameConfig: any, onBack: () => vo
 
   const fetchQuestions = async (offset: number) => {
       try {
-          const res = await fetch("/api/challenge/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ difficulty: "sedang", type: gameConfig.id, count: gameConfig.limit, offset })
-          });
-          return await res.json();
+          const type = gameConfig.id;
+          const count = gameConfig.limit;
+          const currentDifficulty = "sedang";
+          const numAiQuestions = count === "infinity" ? 5 : (count || 5);
+          const levelMulti = offset || 0; 
+          
+          let promptDetail = "";
+          let schemaProperties: Record<string, any> = {
+              id: { type: Type.STRING },
+              tipeData: { type: Type.STRING },
+              tipe: { type: Type.STRING },
+              pertanyaan: { type: Type.STRING },
+          };
+          let requiredFields = ["id", "tipeData", "tipe", "pertanyaan"];
+
+          if (type === "math") {
+              promptDetail = `Buatkan ${numAiQuestions} soal Quick Math (matematika cepat). Semakin tinggi level (sekarang offset ${levelMulti}), semakin sulit kombinasinya (bisa pakai perkalian, pembagian, campuran).
+      Tipe data harus "math", tipe "Quick Math". Harus ada "opsi" (4 string) dan "jawabanBenar". Sertakan "penjelasan".`;
+              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
+              schemaProperties.jawabanBenar = { type: Type.STRING };
+              schemaProperties.penjelasan = { type: Type.STRING };
+              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+          } else if (type === "stroop") {
+              promptDetail = `Buatkan ${numAiQuestions} soal Stroop Match. 
+      Soal Stroop Match adalah menebak warna 'TINTA' asli dari sebuah kata, di mana katanya merupakan nama warna lain. 
+      Misal: teks kata adalah "Kuning", tapi warna hex teks (tinta) adalah merah "#ef4444". Jawaban yang benar adalah "Merah".
+      Gunakan warna-warna bervariasi.
+      Tipe data "stroop", tipe "Stroop Match". Harus ada "teks" (kata), "warnaTeks" (hex bebas atau rgb bebas), "opsi" (4 nama warna), "jawabanBenar" (nama warna sesuai warnaTeks).`;
+              schemaProperties.teks = { type: Type.STRING };
+              schemaProperties.warnaTeks = { type: Type.STRING };
+              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
+              schemaProperties.jawabanBenar = { type: Type.STRING };
+              requiredFields.push("teks", "warnaTeks", "opsi", "jawabanBenar");
+          } else if (type === "memory") {
+              promptDetail = `Buatkan ${numAiQuestions} soal Visual Memory.
+      Grid berukuran 9 kotak (0 sampai 8). Tentukan array angka unik sebagai index kotak biru (misal [1,4,7]). Jumlah kotak biru bergantung offset ${levelMulti} (misal rata-rata ${Math.min(3 + levelMulti, 8)} kotak).
+      Tipe data "memory_grid", tipe "Visual Memory". Harus ada "gridSize" (integer, isi 9), "activeIndexes" (array of integer), "jawabanBenar" (string gabungan array angka berurutan dipisah koma).`;
+              schemaProperties.gridSize = { type: Type.INTEGER };
+              schemaProperties.activeIndexes = { type: Type.ARRAY, items: { type: Type.INTEGER } };
+              schemaProperties.jawabanBenar = { type: Type.STRING };
+              requiredFields.push("gridSize", "activeIndexes", "jawabanBenar");
+          } else if (type === "pattern") {
+              promptDetail = `Buatkan ${numAiQuestions} soal Pola Angka atau Deret. Kesulitan: ${currentDifficulty}.
+      Tipe data "pattern", tipe "Pola Angka". Harus ada "opsi" (4 pilihan, string), dan "jawabanBenar" (string), serta "penjelasan".`;
+              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
+              schemaProperties.jawabanBenar = { type: Type.STRING };
+              schemaProperties.penjelasan = { type: Type.STRING };
+              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+          } else {
+              promptDetail = `Buatkan ${numAiQuestions} soal Logika Analitik dan Teka-teki. Kesulitan: ${currentDifficulty}.
+      Tipe data "logika", tipe "Logika Flash". Harus ada "opsi" (4 pilihan, string), dan "jawabanBenar" (string), serta "penjelasan".`;
+              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
+              schemaProperties.jawabanBenar = { type: Type.STRING };
+              schemaProperties.penjelasan = { type: Type.STRING };
+              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+          }
+
+          let response;
+          let maxRetries = 2;
+
+          for (let i = 0; i <= maxRetries; i++) {
+             try {
+                response = await ai.models.generateContent({
+                   model: i === 0 ? "gemini-3-flash-preview" : "gemini-2.5-flash",
+                   contents: promptDetail,
+                   config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                         type: Type.ARRAY,
+                         items: {
+                            type: Type.OBJECT,
+                            properties: schemaProperties,
+                            required: requiredFields,
+                         }
+                      }
+                   }
+                });
+                break;
+             } catch (err: any) {
+                if (i === maxRetries) throw err;
+                await new Promise(resolve => setTimeout(resolve, 1500 * (i + 1))); 
+             }
+          }
+
+          if (!response || !response.text) throw new Error("Gagal menggenerate respon");
+          return JSON.parse(response.text);
       } catch (err) {
+          console.error("Generate error:", err);
           return { error: true };
       }
   };
@@ -218,18 +306,38 @@ function GameSession({ gameConfig, onBack }: { gameConfig: any, onBack: () => vo
     try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-           const { data: profile } = await supabase.from('profiles').select('xp, level, brainscore').eq('id', session.user.id).single();
+           const { data: profile } = await supabase.from('profiles').select('xp, level, brainscore, streak, lastchallengedate').eq('id', session.user.id).single();
            
            if (profile) {
               const newXp = profile.xp + (totalBenar * 10);
               const newBrainScore = profile.brainscore + Math.floor(akurasi * 5);
               const newLevel = Math.floor(newXp / 100) + 1;
               
+              let newStreak = profile.streak || 0;
+              const now = new Date();
+              if (profile.lastchallengedate) {
+                  const lastDate = new Date(profile.lastchallengedate);
+                  const lastDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+                  const currentDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  
+                  const diffTime = currentDay.getTime() - lastDay.getTime();
+                  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); 
+                  
+                  if (diffDays === 1) {
+                      newStreak += 1;
+                  } else if (diffDays > 1) {
+                      newStreak = 1;
+                  }
+              } else {
+                  newStreak = 1;
+              }
+              
               await supabase.from('profiles').update({
                   xp: newXp,
                   level: newLevel,
                   brainscore: newBrainScore,
-                  lastchallengedate: new Date().toISOString()
+                  streak: newStreak,
+                  lastchallengedate: now.toISOString()
               }).eq('id', session.user.id);
               
               await supabase.from('challenge_history').insert([{
