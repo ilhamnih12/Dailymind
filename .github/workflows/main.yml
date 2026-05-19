@@ -1,0 +1,67 @@
+name: Build Android WebView APK
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Install Capacitor core
+        run: |
+          npm install @capacitor/cli @capacitor/core @capacitor/android --legacy-peer-deps
+
+      - name: Inject WebView Configuration
+        run: |
+          # Buat folder dummy 'out' agar Capacitor tidak protes saat inisialisasi
+          mkdir -p out
+          echo '<h1>DailyMind Loading...</h1>' > out/index.html
+          
+          # Hapus folder android lama (jika ada) biar fresh bersih
+          rm -rf android
+          
+          # Paksa Capacitor untuk langsung menembak URL Netlify kamu
+          echo '{
+            "appId": "com.edinst.app",
+            "appName": "DailyMind",
+            "webDir": "out",
+            "server": {
+              "url": "https://dailymind-iota.vercel.app/",
+              "cleartext": true
+            }
+          }' > capacitor.config.json
+
+      - name: Create Native Android Project
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Compile APK via Gradle
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DailyMind
+          path: android/app/build/outputs/apk/debug/app-debug.apk
