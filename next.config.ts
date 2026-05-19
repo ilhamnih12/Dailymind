@@ -4,10 +4,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  output: 'export', // <-- WAJIB diganti ke 'export' ya Ed!
-  images: {
-    unoptimized: true, // <-- Tambahkan ini juga biar gambar aman di mode statis
-  },
+  output: 'standalone',
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     if (dev && process.env.DISABLE_HMR === 'true') {

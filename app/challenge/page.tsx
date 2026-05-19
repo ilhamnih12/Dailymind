@@ -1,17 +1,10 @@
 "use client";
-import { GoogleGenAI, Type } from "@google/genai";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Clock, Trophy, Target, Zap, Brain, Eye, Calculator, Grid, TrendingUp, Infinity, Heart } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import confetti from "canvas-confetti";
-
-// Initialize Gemini on the client. Note: Exposing API keys on the client is insecure 
-// and only done here at the user's explicit request for Capacitor compatibility.
-const ai = new GoogleGenAI({
-  apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyCWQ4FKmWhHqmCeEsbIFX1f5EiWtPX_Glo",
-});
 
 const CHALLENGE_TYPES = [
   { id: "logika", title: "Logika Flash", desc: "5 Soal Cepat", icon: <Brain />, mode: "waktu", limit: 5, color: "text-[#3b82f6]", bg: "bg-[#3b82f6]/10" },
@@ -106,86 +99,75 @@ function GameSession({ gameConfig, onBack }: { gameConfig: any, onBack: () => vo
           const numAiQuestions = count === "infinity" ? 5 : (count || 5);
           const levelMulti = offset || 0; 
           
-          let promptDetail = "";
-          let schemaProperties: Record<string, any> = {
-              id: { type: Type.STRING },
-              tipeData: { type: Type.STRING },
-              tipe: { type: Type.STRING },
-              pertanyaan: { type: Type.STRING },
-          };
-          let requiredFields = ["id", "tipeData", "tipe", "pertanyaan"];
+          let promptDetail = `Beri respon dalam format JSON dengan struktur: { "questions": [ { ... } ] }.
+Wajib menyertakan properti umum berikut di dalam tiap objek soal: "id" (string unik), "tipeData" (string), "tipe" (string), "pertanyaan" (string). `;
 
           if (type === "math") {
-              promptDetail = `Buatkan ${numAiQuestions} soal Quick Math (matematika cepat). Semakin tinggi level (sekarang offset ${levelMulti}), semakin sulit kombinasinya (bisa pakai perkalian, pembagian, campuran).
-      Tipe data harus "math", tipe "Quick Math". Harus ada "opsi" (4 string) dan "jawabanBenar". Sertakan "penjelasan".`;
-              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
-              schemaProperties.jawabanBenar = { type: Type.STRING };
-              schemaProperties.penjelasan = { type: Type.STRING };
-              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+              promptDetail += `Buatkan ${numAiQuestions} soal Quick Math (matematika cepat). Semakin tinggi level (sekarang offset ${levelMulti}), semakin sulit kombinasinya.
+      Tipe data harus "math", tipe "Quick Math". Harus ada tambahan "opsi" (array 4 string), "jawabanBenar" (string), dan "penjelasan" (string).`;
           } else if (type === "stroop") {
-              promptDetail = `Buatkan ${numAiQuestions} soal Stroop Match. 
-      Soal Stroop Match adalah menebak warna 'TINTA' asli dari sebuah kata, di mana katanya merupakan nama warna lain. 
-      Misal: teks kata adalah "Kuning", tapi warna hex teks (tinta) adalah merah "#ef4444". Jawaban yang benar adalah "Merah".
-      Gunakan warna-warna bervariasi.
-      Tipe data "stroop", tipe "Stroop Match". Harus ada "teks" (kata), "warnaTeks" (hex bebas atau rgb bebas), "opsi" (4 nama warna), "jawabanBenar" (nama warna sesuai warnaTeks).`;
-              schemaProperties.teks = { type: Type.STRING };
-              schemaProperties.warnaTeks = { type: Type.STRING };
-              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
-              schemaProperties.jawabanBenar = { type: Type.STRING };
-              requiredFields.push("teks", "warnaTeks", "opsi", "jawabanBenar");
+              promptDetail += `Buatkan ${numAiQuestions} soal Stroop Match. 
+      Menebak warna 'TINTA' asli dari sebuah kata. Teks asli berupa nama warna, tapi diberi warna hex ("warnaTeks") dari warna yang berbeda.
+      Tipe data "stroop", tipe "Stroop Match". Tambahan properti wajib: "teks" (string kata nama warna), "warnaTeks" (string kode warna hex tinta teks yang sesuai dengan jawaban benar), "opsi" (array 4 string opsi nama warna), "jawabanBenar" (string nama warna dari nilai warnaTeks). Jawaban harus masuk akal (opsi warna solid dasar).`;
           } else if (type === "memory") {
-              promptDetail = `Buatkan ${numAiQuestions} soal Visual Memory.
-      Grid berukuran 9 kotak (0 sampai 8). Tentukan array angka unik sebagai index kotak biru (misal [1,4,7]). Jumlah kotak biru bergantung offset ${levelMulti} (misal rata-rata ${Math.min(3 + levelMulti, 8)} kotak).
-      Tipe data "memory_grid", tipe "Visual Memory". Harus ada "gridSize" (integer, isi 9), "activeIndexes" (array of integer), "jawabanBenar" (string gabungan array angka berurutan dipisah koma).`;
-              schemaProperties.gridSize = { type: Type.INTEGER };
-              schemaProperties.activeIndexes = { type: Type.ARRAY, items: { type: Type.INTEGER } };
-              schemaProperties.jawabanBenar = { type: Type.STRING };
-              requiredFields.push("gridSize", "activeIndexes", "jawabanBenar");
+              promptDetail += `Buatkan ${numAiQuestions} soal Visual Memory.
+      Grid berukuran 9 kotak (0 sampai 8). Tentukan pola array angka unik acak sebagai index kotak biru. Jumlah kotak menyesuaikan level: rata-rata ${Math.min(3 + levelMulti, 8)} kotak dari total 9.
+      Tipe data "memory_grid", tipe "Visual Memory". Tambahan properti: "gridSize" (integer bernilai 9), "activeIndexes" (array integer acak tanpa duplikat antara 0 sd 8), "jawabanBenar" (string gabungan array angka berurutan membesar berurutan dipisahkan koma).`;
           } else if (type === "pattern") {
-              promptDetail = `Buatkan ${numAiQuestions} soal Pola Angka atau Deret. Kesulitan: ${currentDifficulty}.
-      Tipe data "pattern", tipe "Pola Angka". Harus ada "opsi" (4 pilihan, string), dan "jawabanBenar" (string), serta "penjelasan".`;
-              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
-              schemaProperties.jawabanBenar = { type: Type.STRING };
-              schemaProperties.penjelasan = { type: Type.STRING };
-              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+              promptDetail += `Buatkan ${numAiQuestions} soal Pola Angka atau Deret. Kesulitan: ${currentDifficulty}.
+      Tipe data "pattern", tipe "Pola Angka". Tambahan properti wajib: "opsi" (array 4 pilihan string), "jawabanBenar" (string), dan "penjelasan" (string).`;
           } else {
-              promptDetail = `Buatkan ${numAiQuestions} soal Logika Analitik dan Teka-teki. Kesulitan: ${currentDifficulty}.
-      Tipe data "logika", tipe "Logika Flash". Harus ada "opsi" (4 pilihan, string), dan "jawabanBenar" (string), serta "penjelasan".`;
-              schemaProperties.opsi = { type: Type.ARRAY, items: { type: Type.STRING } };
-              schemaProperties.jawabanBenar = { type: Type.STRING };
-              schemaProperties.penjelasan = { type: Type.STRING };
-              requiredFields.push("opsi", "jawabanBenar", "penjelasan");
+              promptDetail += `Buatkan ${numAiQuestions} soal Logika Analitik dan Teka-teki. Kesulitan: ${currentDifficulty}.
+      Tipe data "logika", tipe "Logika Flash". Tambahan properti wajib: "opsi" (array 4 pilihan string), "jawabanBenar" (string), dan "penjelasan" (string).`;
           }
 
           let response;
           let maxRetries = 2;
+          let resultJson = null;
+
+          const groqApiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY || ""; 
+          
+          if (!groqApiKey) {
+               console.warn("GROQ_API_KEY is missing. Harap tambahkan API Key Groq Anda di Settings environment variable.");
+               return { error: true };
+          }
 
           for (let i = 0; i <= maxRetries; i++) {
              try {
-                response = await ai.models.generateContent({
-                   model: i === 0 ? "gemini-3-flash-preview" : "gemini-2.5-flash",
-                   contents: promptDetail,
-                   config: {
-                      responseMimeType: "application/json",
-                      responseSchema: {
-                         type: Type.ARRAY,
-                         items: {
-                            type: Type.OBJECT,
-                            properties: schemaProperties,
-                            required: requiredFields,
-                         }
-                      }
-                   }
+                response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${groqApiKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "llama-3.1-8b-instant",
+                        messages: [
+                            { role: "user", content: promptDetail }
+                        ],
+                        response_format: { type: "json_object" }
+                    })
                 });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error("Groq API error " + response.status + " " + errorText);
+                }
+                
+                const data = await response.json();
+                resultJson = JSON.parse(data.choices[0].message.content);
                 break;
              } catch (err: any) {
+                console.error("Attempt " + (i + 1) + " failed: ", err);
                 if (i === maxRetries) throw err;
                 await new Promise(resolve => setTimeout(resolve, 1500 * (i + 1))); 
              }
           }
 
-          if (!response || !response.text) throw new Error("Gagal menggenerate respon");
-          return JSON.parse(response.text);
+          let finalQuestions = resultJson?.questions || resultJson?.data || resultJson?.soal || resultJson;
+          if (Array.isArray(finalQuestions)) return finalQuestions;
+
+          throw new Error("Gagal menggenerate respon valid dari Groq: " + JSON.stringify(resultJson));
       } catch (err) {
           console.error("Generate error:", err);
           return { error: true };
@@ -517,20 +499,22 @@ function MemoryGridGame({ q, onComplete }: { q: any, onComplete: (ans: string) =
   const handleTileClick = (idx: number) => {
       if (phase !== 'recall') return;
       
-      const newSelected = selected.includes(idx) ? selected.filter(i => i !== idx) : [...selected, idx];
-      setSelected(newSelected);
-
-      if (newSelected.length === q.activeIndexes.length) {
-          onComplete(newSelected.sort((a,b)=>a-b).join(','));
+      const isSelected = selected.includes(idx);
+      if (isSelected) {
+          setSelected(selected.filter(i => i !== idx));
+      } else {
+          if (selected.length < q.activeIndexes.length) {
+              setSelected([...selected, idx]);
+          }
       }
   };
 
   return (
-      <div className="mt-auto flex flex-col items-center">
-          <div className="mb-4 text-sm font-bold text-amber-500 bg-amber-500/10 px-4 py-2 rounded-xl">
-              {phase === 'memorize' ? 'Hafalkan pola ini!' : `Pilih ${q.activeIndexes.length} kotak`}
+      <div className="mt-auto flex flex-col items-center w-full">
+          <div className="mb-4 text-sm font-bold text-amber-500 bg-amber-500/10 px-4 py-2 rounded-xl text-center">
+              {phase === 'memorize' ? 'Hafalkan pola ini!' : `Pilih ${q.activeIndexes.length - selected.length} kotak lagi`}
           </div>
-          <div className="grid grid-cols-3 gap-2 w-full max-w-[250px] mx-auto aspect-square">
+          <div className="grid grid-cols-3 gap-2 w-full max-w-[250px] mx-auto aspect-square mb-6">
              {Array.from({ length: q.gridSize }).map((_, i) => {
                  const isTarget = q.activeIndexes.includes(i);
                  const isSelected = selected.includes(i);
@@ -548,6 +532,14 @@ function MemoryGridGame({ q, onComplete }: { q: any, onComplete: (ans: string) =
                  )
              })}
           </div>
+          {phase === 'recall' && selected.length === q.activeIndexes.length && (
+             <button
+                onClick={() => onComplete([...selected].sort((a,b)=>a-b).join(','))}
+                className="w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg active:scale-95 transition-all bg-amber-500 hover:bg-amber-600 border-b-4 border-amber-700"
+             >
+                Lanjut
+             </button>
+          )}
       </div>
   );
 }
